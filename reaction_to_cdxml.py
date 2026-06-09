@@ -300,24 +300,10 @@ class CDXMLBuilder:
 
     def build(self) -> str:
         """生成最终 CDXML 字符串"""
-        # ---- 计算整体平移偏移使所有坐标非负 ----
-        # 找出所有元素的最小 y 值
-        all_ys = []
-        for frag in self.fragments:
-            for atom in frag['atoms']:
-                all_ys.append(atom['y'])
-        for arrow in self.arrows:
-            all_ys.extend([arrow['y1'], arrow['y2']])
-        for text_item in self.texts:
-            all_ys.append(text_item['y'])
-
-        min_y = min(all_ys) if all_ys else 0.0
-        y_offset = -min_y + 30.0  # 加上 30 单位页面边距
-
         lines = []
         lines.append('<?xml version="1.0" encoding="UTF-8" ?>')
         lines.append('<!DOCTYPE CDXML SYSTEM "https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd" >')
-        lines.append(f'<CDXML id="{self._get_id()}" BondLength="{DEFAULT_BOND_LENGTH}">')
+        lines.append(f'<CDXML id="{self._get_id()}" BondLength="">')
         lines.append(f'<page id="{self._get_id()}">')
 
         # ====== 写入所有 fragment ======
@@ -327,7 +313,7 @@ class CDXMLBuilder:
             # 原子节点 - 保留所有属性（Element, NumHydrogens, Charge etc.）
             for atom in frag['atoms']:
                 x_str = f"{atom['x']:.2f}"
-                y_str = f"{atom['y'] + y_offset:.2f}"
+                y_str = f"{atom['y']:.2f}"
                 extra = atom.get('attrs', '')
                 if extra:
                     lines.append(f'<n id="{atom["id"]}" p="{x_str} {y_str}" {extra}/>')
@@ -350,9 +336,9 @@ class CDXMLBuilder:
         for arrow in self.arrows:
             arrow_id = arrow['id']
             x1_str = f"{arrow['x1']:.2f}"
-            y1_str = f"{arrow['y1'] + y_offset:.2f}"
+            y1_str = f"{arrow['y1']:.2f}"
             x2_str = f"{arrow['x2']:.2f}"
-            y2_str = f"{arrow['y2'] + y_offset:.2f}"
+            y2_str = f"{arrow['y2']:.2f}"
 
             lines.append(f'<graphic id="{arrow_id}" GraphicType="Line" '
                         f'BoundingBox="{x1_str} {y1_str} {x2_str} {y2_str}" '
@@ -362,7 +348,7 @@ class CDXMLBuilder:
         for text_item in self.texts:
             tid = text_item['id']
             x_str = f"{text_item['x']:.2f}"
-            y_str = f"{text_item['y'] + y_offset:.2f}"
+            y_str = f"{text_item['y']:.2f}"
 
             lines.append(f'<t id="{tid}" p="{x_str} {y_str}" Justification="{text_item["justification"]}">')
             lines.append(f'<s font="{text_item["font_face"]}" size="{text_item["font_size"]}" face="{1 if text_item["bold"] else 0}">')
