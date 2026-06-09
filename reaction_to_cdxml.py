@@ -304,70 +304,74 @@ class CDXMLBuilder:
         return plus_id
 
     def build(self) -> str:
-        """生成最终 CDXML 字符串"""
-        lines = []
-        lines.append('<?xml version="1.0" encoding="UTF-8" ?>')
-        lines.append('<!DOCTYPE CDXML SYSTEM "https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd" >')
+        """生成最终 CDXML 字符串（与 RDKit 格式一致）"""
+        L = []  # each entry = one line, no trailing CRLF
 
-        lines.append(f'<CDXML id="{self._get_id()}" BondLength="">')
-        # A4 横向: 设置页面尺寸为 842x595 CDXML 单位（≈ 297x210 mm）
-        lines.append(f'<page id="{self._get_id()}" WidthPages="1" HeightPages="1" '
-                     f'BoundingBox="0 0 {PAGE_WIDTH:.0f} {PAGE_HEIGHT:.0f}">')
+        L.append('<?xml version="1.0" encoding="UTF-8" ?>')
+        L.append('<!DOCTYPE CDXML SYSTEM "https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd" >')
 
-        # ====== 写入所有 fragment ======
+        L.append('<CDXML')
+        L.append(f' id="{self._get_id()}"')
+        L.append(' BondLength=""')
+        L.append('>')
+
+        L.append('<page')
+        L.append(f' id="{self._get_id()}">')
+
         for frag in self.fragments:
-            lines.append(f'<fragment id="{frag["id"]}">')
+            L.append('<fragment')
+            L.append(f' id="{frag["id"]}">')
 
-            # 原子节点 - 保留所有属性（Element, NumHydrogens, Charge etc.）
             for atom in frag['atoms']:
                 x_str = f"{atom['x']:.2f}"
                 y_str = f"{atom['y']:.2f}"
                 extra = atom.get('attrs', '')
+                L.append('<n')
+                L.append(f' id="{atom["id"]}"')
+                L.append(f' p="{x_str} {y_str}"')
                 if extra:
-                    lines.append(f'<n id="{atom["id"]}" p="{x_str} {y_str}" {extra}/>')
-                elif atom['element'] == 6:
-                    lines.append(f'<n id="{atom["id"]}" p="{x_str} {y_str}"/>')
-                else:
-                    lines.append(f'<n id="{atom["id"]}" p="{x_str} {y_str}" Element="{atom["element"]}"/>')
+                    L.append(f' {extra}')
+                elif atom['element'] != 6:
+                    L.append(f' Element="{atom["element"]}"')
+                L.append('/>')
 
-            # 键 - 保留所有属性（Order, Display, 等）
             for bond in frag['bonds']:
                 extra = bond.get('attrs', '')
+                L.append('<b')
+                L.append(f' id="{bond["id"]}"')
+                L.append(f' B="{bond["B"]}"')
+                L.append(f' E="{bond["E"]}"')
                 if extra:
-                    lines.append(f'<b id="{bond["id"]}" B="{bond["B"]}" E="{bond["E"]}" {extra}/>')
-                else:
-                    lines.append(f'<b id="{bond["id"]}" B="{bond["B"]}" E="{bond["E"]}"/>')
+                    L.append(f' {extra}')
+                L.append('/>')
 
-            lines.append('</fragment>')
+            L.append('</fragment>')
 
-        # ====== 写入所有箭头 ======
         for arrow in self.arrows:
-            arrow_id = arrow['id']
-            x1_str = f"{arrow['x1']:.2f}"
-            y1_str = f"{arrow['y1']:.2f}"
-            x2_str = f"{arrow['x2']:.2f}"
-            y2_str = f"{arrow['y2']:.2f}"
+            L.append('<graphic')
+            L.append(f' id="{arrow["id"]}"')
+            L.append(' GraphicType="Line"')
+            L.append(f' BoundingBox="{arrow["x1"]:.2f} {arrow["y1"]:.2f} {arrow["x2"]:.2f} {arrow["y2"]:.2f}"')
+            L.append(f' ArrowType="{arrow["arrow_type"]}"')
+            L.append('/>')
 
-            lines.append(f'<graphic id="{arrow_id}" GraphicType="Line" '
-                        f'BoundingBox="{x1_str} {y1_str} {x2_str} {y2_str}" '
-                        f'ArrowType="{arrow["arrow_type"]}"/>')
-
-        # ====== 写入所有文本 ======
         for text_item in self.texts:
-            tid = text_item['id']
-            x_str = f"{text_item['x']:.2f}"
-            y_str = f"{text_item['y']:.2f}"
+            L.append('<t')
+            L.append(f' id="{text_item["id"]}"')
+            L.append(f' p="{text_item["x"]:.2f} {text_item["y"]:.2f}"')
+            L.append(f' Justification="{text_item["justification"]}">')
+            L.append('<s')
+            L.append(f' font="{text_item["font_face"]}"')
+            L.append(f' size="{text_item["font_size"]}"')
+            L.append(f' face="{1 if text_item["bold"] else 0}">')
+            L.append(f'{xml_escape(text_item["text"])}')
+            L.append('</s>')
+            L.append('</t>')
 
-            lines.append(f'<t id="{tid}" p="{x_str} {y_str}" Justification="{text_item["justification"]}">')
-            lines.append(f'<s font="{text_item["font_face"]}" size="{text_item["font_size"]}" face="{1 if text_item["bold"] else 0}">')
-            lines.append(f'{xml_escape(text_item["text"])}')
-            lines.append('</s>')
-            lines.append('</t>')
+        L.append('</page>')
+        L.append('</CDXML>')
 
-        lines.append('</page>')
-        lines.append('</CDXML>')
-
-        return '\n'.join(lines)
+        return '\r\n'.join(L) + '\r\n'
 
 
 def build_linear_reaction(steps: list) -> str:
@@ -605,9 +609,9 @@ def main():
         print(f"CDXML ERROR: {e}", file=sys.stderr)
         sys.exit(1)
 
-    # 写入文件
-    with open(args.output, 'w', encoding='utf-8') as f:
-        f.write(cdxml)
+    # 写入文件（用二进制模式防止 Windows 自动转换 \n → \r\n）
+    with open(args.output, 'wb') as f:
+        f.write(cdxml.encode('utf-8'))
 
     sys.stdout.reconfigure(encoding='utf-8')  # for Windows GBK
     print(f"  OK: {args.output}")
