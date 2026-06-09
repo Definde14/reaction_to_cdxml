@@ -49,9 +49,9 @@ SCALE_FACTOR = 28.8        # RDKit internal -> CDXML 坐标转换因子
                             # RDKit 中键长 ≈ 1.5 → CDXML 键长 ≈ 43.2
                             # CDXML 中两个相邻原子约 43.2 单位
 # 布局参数
-MOL_GAP = 60.0             # 分子之间的间距
-ARROW_LENGTH = 50.0        # 箭头长度
-ARROW_GAP = 15.0           # 箭头与分子的间距
+MOL_GAP = 80.0             # 分子之间的间距（≈2.8 个键长）
+ARROW_LENGTH = 86.0        # 箭头长度（≈2 cm）
+ARROW_GAP = 36.0           # 箭头与分子的间距（≈1.2 cm）
 VERTICAL_OFFSET = 0.0      # 垂直居中偏移
 
 # 步骤标签字体设置
@@ -377,8 +377,6 @@ def build_linear_reaction(steps: list) -> str:
       Reactant1 + Reactant2 → Product1 + Product2   (Step 1)
                 ↓
       Reactant3 → Product3                          (Step 2)
-                ↓
-      ...
 
     Args:
         steps: list of ReactionStep 对象
@@ -396,22 +394,23 @@ def build_linear_reaction(steps: list) -> str:
         else:
             raise TypeError(f"steps[{i}] 格式无效")
 
-    # Phase 1: 预计算所有分子的数据
-    step_mol_data = []  # list of (reactant_data_list, product_data_list)
+    # Phase 1: 预计算所有分子的数据 (几何中心, 宽, 高)
+    step_mol_data = []
     for step in processed_steps:
         r_data = [generate_molecule_data(smi) for smi in step.reactants_smiles]
         p_data = [generate_molecule_data(smi) for smi in step.products_smiles]
         step_mol_data.append((r_data, p_data))
 
     # Phase 2: 布局计算
-    # 每行: R1 [+ R2 + ...] → [+ ... +] P1 [+ P2 + ...]
-    # 用每行最高分子决定行间距
+    # 每行从左到右:
+    #   R1 | + | R2 | → | P1 | + | P2
+    # 间距常量: MOL_GAP 是分子间的加号间距
+    #           分子间间距 = gap_rp (分子-加号-分子)
 
-    current_y = 0.0
-    row_height = 0.0
+    current_y = 0.0  # 行中心 y 坐标（从上往下）
 
     for step_idx, (step, (r_data, p_data)) in enumerate(zip(processed_steps, step_mol_data)):
-        # 计算该行最大高度
+        # 计算该行最大高度（用于行间距）
         max_h = 0.0
         for d in r_data + p_data:
             if d['height'] > max_h:
@@ -419,81 +418,90 @@ def build_linear_reaction(steps: list) -> str:
 
         y_center = current_y
 
-        # 布局: 从左到右 = R1 + R2 → P1 + P2
-        # 从 x=0 开始布局
-        x_cursor = 0.0
-        r_centers = []
-        p_centers = []
+        # ========= 布局计算 =========
+        # 思路：先确定所有元素（分子、加号、箭头）的左中右位置
+        # 每个分子用它的 center_x 定位；箭头用 x1,x2 定位
 
-        # 放置反应物
-        r_centers = []
-        for i, d in enumerate(r_data):
-            if i > 0:
-                x_cursor += MOL_GAP * 0.3  # 加号间距
-            cx = x_cursor
+        # ---- 反应物区 ----
+        rx = 0.0  # 当前 x 游标
+        r_centers = []   # 每个反应物几何中心应放置的 x 坐标
+        r_rights = []     # 每个反应物右边界
+        for d in r_data:
+            half_w = d['width'] / 2
+            cx = rx + half_w  # 分子的几何中心
             r_centers.append(cx)
-            x_cursor += d['width']
+            r_rights.append(cx + half_w)
+            rx = cx + half_w + MOL_GAP * 0.4  # 加号间距
 
-        # 箭头
+        # ---- 反应物之间的加号 ----
+        r_plus_positions = []
+        if len(r_data) > 1:
+            for i in range(len(r_data) - 1):
+                # 加号放在两个分子之间的中点
+                plus_x = (r_rights[i] + r_centers[i+1] - r_data[i+1]['width'] / 2) / 2
+                r_plus_positions.append(plus_x)
+
+        # ---- 箭头 ----
         if r_data:
-            arrow_start = max(r_centers) + max(d['width'] / 2 for d in r_data) + ARROW_GAP
+            arrow_start = r_rights[-1] + ARROW_GAP
         else:
-            arrow_start = x_cursor + ARROW_GAP
+            arrow_start = rx + ARROW_GAP
         arrow_end = arrow_start + ARROW_LENGTH
         arrow_cx = (arrow_start + arrow_end) / 2
 
-        # 放置产物
-        x_cursor = arrow_end + ARROW_GAP
-        p_centers = []
-        for i, d in enumerate(p_data):
-            if i > 0:
-                x_cursor += MOL_GAP * 0.3
-            cx = x_cursor
+        # ---- 产物区 ----
+        px = arrow_end + ARROW_GAP
+        p_centers = []   # 每个产物几何中心应放置的 x 坐标
+        p_rights = []     # 每个产物右边界
+        for d in p_data:
+            half_w = d['width'] / 2
+            cx = px + half_w
             p_centers.append(cx)
-            x_cursor += d['width']
+            p_rights.append(cx + half_w)
+            px = cx + half_w + MOL_GAP * 0.4
 
-        # 计算整体宽度以居中（可选居中）
-        total_width = x_cursor
+        # ---- 产物之间的加号 ----
+        p_plus_positions = []
+        if len(p_data) > 1:
+            for i in range(len(p_data) - 1):
+                plus_x = (p_rights[i] + p_centers[i+1] - p_data[i+1]['width'] / 2) / 2
+                p_plus_positions.append(plus_x)
 
-        # Phase 3: 实际放置分子并输出
+        # ========= 输出 =========
         # 放置反应物
-        x_plus_cursor = 0.0
-        for i, d in enumerate(r_data):
-            if i > 0:
-                plus_x = x_plus_cursor + MOL_GAP * 0.15
-                builder.add_plus(plus_x, y_center)
-                x_plus_cursor += MOL_GAP * 0.3
-            builder.add_fragment(d, r_centers[i], y_center)
-            x_plus_cursor += d['width']
+        for d, cx in zip(r_data, r_centers):
+            builder.add_fragment(d, cx, y_center)
+
+        # 放置反应物加号
+        for plus_x in r_plus_positions:
+            builder.add_plus(plus_x, y_center)
 
         # 箭头
         builder.add_arrow(arrow_start, y_center, arrow_end, y_center)
 
         # 放置产物
-        x_plus_cursor = arrow_end + ARROW_GAP
-        for i, d in enumerate(p_data):
-            if i > 0:
-                plus_x = x_plus_cursor + MOL_GAP * 0.15
-                builder.add_plus(plus_x, y_center)
-                x_plus_cursor += MOL_GAP * 0.3
-            builder.add_fragment(d, p_centers[i], y_center)
-            x_plus_cursor += d['width']
+        for d, cx in zip(p_data, p_centers):
+            builder.add_fragment(d, cx, y_center)
+
+        # 放置产物加号
+        for plus_x in p_plus_positions:
+            builder.add_plus(plus_x, y_center)
 
         # 条件文字
         step_obj = processed_steps[step_idx]
         if step_obj.conditions_above:
-            builder.add_text(step_obj.conditions_above, arrow_cx, y_center + 12,
+            builder.add_text(step_obj.conditions_above, arrow_cx, y_center + 14,
                              font_size=10, justification=1)
         if step_obj.conditions_below:
             builder.add_text(step_obj.conditions_below, arrow_cx, y_center - 14,
                              font_size=10, justification=1)
         if step_obj.label:
             builder.add_text(step_obj.label, arrow_cx,
-                             y_center + max_h / 2 + 18,
+                             y_center + max_h / 2 + 20,
                              font_size=12, font_face=2, justification=1, bold=True)
 
         # 行间距
-        current_y -= (max_h + MOL_GAP * 1.0)
+        current_y -= (max_h + MOL_GAP * 1.2)
 
     return builder.build()
 
