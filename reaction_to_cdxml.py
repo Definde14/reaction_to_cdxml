@@ -54,6 +54,11 @@ ARROW_LENGTH = 86.0        # 箭头长度（≈2 cm）
 ARROW_GAP = 36.0           # 箭头与分子的间距（≈1.2 cm）
 VERTICAL_OFFSET = 0.0      # 垂直居中偏移
 
+# 页面设置（A4 横向: 297mm × 210mm）
+# CDXML 单位: 1 inch = 72 units, 1 mm ≈ 2.835 units
+PAGE_WIDTH = 842.0    # 297mm
+PAGE_HEIGHT = 595.0   # 210mm
+
 # 步骤标签字体设置
 LABEL_FONT = 2    # Times
 LABEL_SIZE = 12   # point
@@ -303,8 +308,11 @@ class CDXMLBuilder:
         lines = []
         lines.append('<?xml version="1.0" encoding="UTF-8" ?>')
         lines.append('<!DOCTYPE CDXML SYSTEM "https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd" >')
+
         lines.append(f'<CDXML id="{self._get_id()}" BondLength="">')
-        lines.append(f'<page id="{self._get_id()}">')
+        # A4 横向: 设置页面尺寸为 842x595 CDXML 单位（≈ 297x210 mm）
+        lines.append(f'<page id="{self._get_id()}" WidthPages="1" HeightPages="1" '
+                     f'BoundingBox="0 0 {PAGE_WIDTH:.0f} {PAGE_HEIGHT:.0f}">')
 
         # ====== 写入所有 fragment ======
         for frag in self.fragments:
