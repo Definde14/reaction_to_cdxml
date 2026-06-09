@@ -300,6 +300,20 @@ class CDXMLBuilder:
 
     def build(self) -> str:
         """生成最终 CDXML 字符串"""
+        # ---- 计算整体平移偏移使所有坐标非负 ----
+        # 找出所有元素的最小 y 值
+        all_ys = []
+        for frag in self.fragments:
+            for atom in frag['atoms']:
+                all_ys.append(atom['y'])
+        for arrow in self.arrows:
+            all_ys.extend([arrow['y1'], arrow['y2']])
+        for text_item in self.texts:
+            all_ys.append(text_item['y'])
+
+        min_y = min(all_ys) if all_ys else 0.0
+        y_offset = -min_y + 30.0  # 加上 30 单位页面边距
+
         lines = []
         lines.append('<?xml version="1.0" encoding="UTF-8" ?>')
         lines.append('<!DOCTYPE CDXML SYSTEM "https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd" >')
@@ -313,10 +327,9 @@ class CDXMLBuilder:
             # 原子节点 - 保留所有属性（Element, NumHydrogens, Charge etc.）
             for atom in frag['atoms']:
                 x_str = f"{atom['x']:.2f}"
-                y_str = f"{atom['y']:.2f}"
+                y_str = f"{atom['y'] + y_offset:.2f}"
                 extra = atom.get('attrs', '')
                 if extra:
-                    # 保留原有额外属性（如 Charge, NumHydrogens, Radical 等）
                     lines.append(f'<n id="{atom["id"]}" p="{x_str} {y_str}" {extra}/>')
                 elif atom['element'] == 6:
                     lines.append(f'<n id="{atom["id"]}" p="{x_str} {y_str}"/>')
@@ -337,15 +350,10 @@ class CDXMLBuilder:
         for arrow in self.arrows:
             arrow_id = arrow['id']
             x1_str = f"{arrow['x1']:.2f}"
-            y1_str = f"{arrow['y1']:.2f}"
+            y1_str = f"{arrow['y1'] + y_offset:.2f}"
             x2_str = f"{arrow['x2']:.2f}"
-            y2_str = f"{arrow['y2']:.2f}"
+            y2_str = f"{arrow['y2'] + y_offset:.2f}"
 
-            # Arrow 在 CDXML 中用 <graphic> 表示
-            # GraphicType="Line" 表示箭头是线
-            # ArrowType 控制箭头样式 (FullHead=标准箭头)
-            # BoundingBox 存储起点和终点坐标
-            # 对于 line-type graphic, BoundingBox 的两个点分别是起点和终点
             lines.append(f'<graphic id="{arrow_id}" GraphicType="Line" '
                         f'BoundingBox="{x1_str} {y1_str} {x2_str} {y2_str}" '
                         f'ArrowType="{arrow["arrow_type"]}"/>')
@@ -354,10 +362,8 @@ class CDXMLBuilder:
         for text_item in self.texts:
             tid = text_item['id']
             x_str = f"{text_item['x']:.2f}"
-            y_str = f"{text_item['y']:.2f}"
+            y_str = f"{text_item['y'] + y_offset:.2f}"
 
-            # Justification: 0=left, 1=center, 2=right
-            # 使用 p 属性控制位置, LineStarts 表示文本基线位置
             lines.append(f'<t id="{tid}" p="{x_str} {y_str}" Justification="{text_item["justification"]}">')
             lines.append(f'<s font="{text_item["font_face"]}" size="{text_item["font_size"]}" face="{1 if text_item["bold"] else 0}">')
             lines.append(f'{xml_escape(text_item["text"])}')
@@ -407,7 +413,7 @@ def build_linear_reaction(steps: list) -> str:
     # 间距常量: MOL_GAP 是分子间的加号间距
     #           分子间间距 = gap_rp (分子-加号-分子)
 
-    current_y = 0.0  # 行中心 y 坐标（从上往下）
+    current_y = 0.0  # 行中心 y 坐标（ChemDraw 坐标系：从下到上为正）
 
     for step_idx, (step, (r_data, p_data)) in enumerate(zip(processed_steps, step_mol_data)):
         # 计算该行最大高度（用于行间距）
@@ -500,7 +506,9 @@ def build_linear_reaction(steps: list) -> str:
                              y_center + max_h / 2 + 20,
                              font_size=12, font_face=2, justification=1, bold=True)
 
-        # 行间距
+        # 行间距（向负y方向移动，第一行在顶部大y，后续行在下方小y）
+        # 但在 ChemDraw 坐标系中 y > 0，所以需确保所有 y 正值
+        # 最终 builder.build() 前会整体平移使 min_y >= 页面底部
         current_y -= (max_h + MOL_GAP * 1.2)
 
     return builder.build()
