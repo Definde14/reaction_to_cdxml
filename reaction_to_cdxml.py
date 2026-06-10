@@ -377,10 +377,15 @@ class CDXMLBuilder:
 def build_linear_reaction(steps: list) -> str:
     """构建线性多步反应 CDXML。
 
-    布局（每行居中）:
-      Reactant1 + Reactant2 → Product1 + Product2   (Step 1)
+    布局（屏幕坐标系统:x 从左到右增大,y 从上到下增大）:
+      R1 + R2 → P1 + P2   (Step 1)   y小(页面顶部)
                 ↓
-      Reactant3 → Product3                          (Step 2)
+      R3 + R4 → P3 + P4   (Step 2)   y大(页面下方)
+
+    ChemDraw 特性:
+      - x 正方向向右,y 正方向向下(标准屏幕坐标)
+      - Arrow BoundingBox 起点=(大x,y), 终点=(小x,y) 才指向右
+      - 第一行在页面顶部(小y), 后续行在下方(大y)
 
     Args:
         steps: list of ReactionStep 对象
@@ -405,16 +410,13 @@ def build_linear_reaction(steps: list) -> str:
         p_data = [generate_molecule_data(smi) for smi in step.products_smiles]
         step_mol_data.append((r_data, p_data))
 
-    # Phase 2: 布局计算
-    # 每行从左到右:
-    #   R1 | + | R2 | → | P1 | + | P2
-    # 间距常量: MOL_GAP 是分子间的加号间距
-    #           分子间间距 = gap_rp (分子-加号-分子)
+    # Phase 2: 布局计算（屏幕坐标:x向右为正,y向下为正）
+    # 反应物在左(大x) → 箭头(x1>x2指向右) → 产物在右(小x)
+    # Step 1 在上(小y) → Step 2 在下(大y)
 
-    current_y = 0.0  # 行中心 y 坐标（ChemDraw 坐标系：从下到上为正）
+    current_y = 80.0  # 顶部起始 y
 
     for step_idx, (step, (r_data, p_data)) in enumerate(zip(processed_steps, step_mol_data)):
-        # 计算该行最大高度（用于行间距）
         max_h = 0.0
         for d in r_data + p_data:
             if d['height'] > max_h:
@@ -422,92 +424,85 @@ def build_linear_reaction(steps: list) -> str:
 
         y_center = current_y
 
-        # ========= 布局计算 =========
-        # 思路：先确定所有元素（分子、加号、箭头）的左中右位置
-        # 每个分子用它的 center_x 定位；箭头用 x1,x2 定位
+        # 计算本行所需总宽度
+        total_r_w = sum(d['width'] for d in r_data)
+        total_p_w = sum(d['width'] for d in p_data)
+        total_r_gap = max(0, len(r_data)-1) * MOL_GAP * 0.4
+        total_p_gap = max(0, len(p_data)-1) * MOL_GAP * 0.4
+        row_w = total_r_w + total_r_gap + total_p_w + total_p_gap + ARROW_LENGTH + ARROW_GAP * 2
+
+        # 从足够大的 x 开始，确保所有元素 x>0
+        rx = row_w + 50.0
 
         # ---- 反应物区 ----
-        rx = 0.0  # 当前 x 游标
-        r_centers = []   # 每个反应物几何中心应放置的 x 坐标
-        r_rights = []     # 每个反应物右边界
+        r_centers = []
+        r_lefts = []
         for d in r_data:
             half_w = d['width'] / 2
-            cx = rx + half_w  # 分子的几何中心
+            cx = rx - half_w
             r_centers.append(cx)
-            r_rights.append(cx + half_w)
-            rx = cx + half_w + MOL_GAP * 0.4  # 加号间距
+            r_lefts.append(cx - half_w)
+            rx = cx - half_w - MOL_GAP * 0.4
 
         # ---- 反应物之间的加号 ----
         r_plus_positions = []
         if len(r_data) > 1:
             for i in range(len(r_data) - 1):
-                # 加号放在两个分子之间的中点
-                plus_x = (r_rights[i] + r_centers[i+1] - r_data[i+1]['width'] / 2) / 2
+                plus_x = (r_lefts[i] + r_centers[i+1] + r_data[i+1]['width'] / 2) / 2
                 r_plus_positions.append(plus_x)
 
         # ---- 箭头 ----
         if r_data:
-            arrow_start = r_rights[-1] + ARROW_GAP
+            arrow_start = r_lefts[-1] - ARROW_GAP
         else:
-            arrow_start = rx + ARROW_GAP
-        arrow_end = arrow_start + ARROW_LENGTH
+            arrow_start = rx - ARROW_GAP
+        arrow_end = arrow_start - ARROW_LENGTH
         arrow_cx = (arrow_start + arrow_end) / 2
 
         # ---- 产物区 ----
-        px = arrow_end + ARROW_GAP
-        p_centers = []   # 每个产物几何中心应放置的 x 坐标
-        p_rights = []     # 每个产物右边界
+        px = arrow_end - ARROW_GAP
+        p_centers = []
+        p_lefts = []
         for d in p_data:
             half_w = d['width'] / 2
-            cx = px + half_w
+            cx = px - half_w
             p_centers.append(cx)
-            p_rights.append(cx + half_w)
-            px = cx + half_w + MOL_GAP * 0.4
+            p_lefts.append(cx - half_w)
+            px = cx - half_w - MOL_GAP * 0.4
 
         # ---- 产物之间的加号 ----
         p_plus_positions = []
         if len(p_data) > 1:
             for i in range(len(p_data) - 1):
-                plus_x = (p_rights[i] + p_centers[i+1] - p_data[i+1]['width'] / 2) / 2
+                plus_x = (p_lefts[i] + p_centers[i+1] + p_data[i+1]['width'] / 2) / 2
                 p_plus_positions.append(plus_x)
 
         # ========= 输出 =========
-        # 放置反应物
         for d, cx in zip(r_data, r_centers):
             builder.add_fragment(d, cx, y_center)
-
-        # 放置反应物加号
         for plus_x in r_plus_positions:
             builder.add_plus(plus_x, y_center)
 
-        # 箭头
         builder.add_arrow(arrow_start, y_center, arrow_end, y_center)
 
-        # 放置产物
         for d, cx in zip(p_data, p_centers):
             builder.add_fragment(d, cx, y_center)
-
-        # 放置产物加号
         for plus_x in p_plus_positions:
             builder.add_plus(plus_x, y_center)
 
-        # 条件文字
         step_obj = processed_steps[step_idx]
         if step_obj.conditions_above:
-            builder.add_text(step_obj.conditions_above, arrow_cx, y_center + 14,
+            builder.add_text(step_obj.conditions_above, arrow_cx, y_center - 16,
                              font_size=10, justification=1)
         if step_obj.conditions_below:
-            builder.add_text(step_obj.conditions_below, arrow_cx, y_center - 14,
+            builder.add_text(step_obj.conditions_below, arrow_cx, y_center + 16,
                              font_size=10, justification=1)
         if step_obj.label:
             builder.add_text(step_obj.label, arrow_cx,
-                             y_center + max_h / 2 + 20,
+                             y_center - max_h / 2 - 22,
                              font_size=12, font_face=2, justification=1, bold=True)
 
-        # 行间距（向负y方向移动，第一行在顶部大y，后续行在下方小y）
-        # 但在 ChemDraw 坐标系中 y > 0，所以需确保所有 y 正值
-        # 最终 builder.build() 前会整体平移使 min_y >= 页面底部
-        current_y -= (max_h + MOL_GAP * 1.2)
+        current_y += max_h + MOL_GAP * 1.5
 
     return builder.build()
 
