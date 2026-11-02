@@ -1,6 +1,8 @@
 # reaction_to_cdxml
 
-将反应路径（Reaction SMILES）转换为 **ChemDraw CDXML 文件**，可直接在 ChemDraw 中打开。
+将 Reaction SMILES 转换为可编辑的 **ChemDraw CDXML**，支持多步骤、多组分、反应条件标注、尺寸驱动布局及分页。
+
+项目已按官方 CDXML 定义重构，并加入真实论文案例与自动回归测试；ChemDraw 原生显示和打印仍待验证。
 
 ## 功能
 
@@ -50,7 +52,7 @@ c1ccccc1>>c1ccc(cc1)[N+](=O)[O-]
 
 ## 输出
 
-生成标准的 `.cdxml` 文件，可以通过 ChemDraw 直接打开，支持编辑和导出为其他格式。
+生成供 ChemDraw 编辑的 `.cdxml` 文件。当前已验证 XML 格式和 RDKit 结构往返；原生显示效果请结合下方已知限制评估。
 ## 布局重构
 
 要求 Python 3.10+。安装：`pip install -r requirements.txt`。
@@ -87,3 +89,24 @@ python gen_test_schemes.py --output-dir examples
 - [Revvity 官方 CDXML DTD](https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd)
 - [RDKit CDXML 文档](https://rdkit.org/docs/source/rdkit.Chem.rdmolfiles.html)
 - [pycdxml](https://github.com/kienerj/pycdxml)：借鉴其统一样式和布局思路，未复制代码。
+
+
+## 真实论文案例
+
+已用 Tang 等 2021 年论文 Figure 3A 的前两步“乳糖水解 → 葡萄糖氧化”测试，
+包含 9 个分子、78 个原子及 25 条立体楔线/虚楔线。对象边界、包围盒不相交、
+结构往返和元素守恒检查通过。
+
+```bash
+python paper_case_example.py -o tang2021_cascade.cdxml
+python -m unittest -v
+```
+
+[案例输入、来源与测试说明](paper_case/README.md)。该案例是手工转录的反应示例，
+不包含论文完整级联过程，程序本身不支持从论文 PDF 自动识别结构。
+
+### 已知限制
+
+- 该案例需要 1684 × 595 pt（两张横向 A4 宽度），目前通过扩展画布避免出界，紧凑排版仍待改进。
+- ChemDraw 原生打开与打印未验证；此前本机 COM 调用返回授权错误。
+- RDKit 在案例读取中报告反应关联对象查找警告；分子结构往返通过不等于所有读取器的反应语义均兼容。
