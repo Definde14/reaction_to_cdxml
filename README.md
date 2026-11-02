@@ -1,6 +1,8 @@
 # reaction_to_cdxml
 
-将反应路径（Reaction SMILES）转换为 **ChemDraw CDXML 文件**，可直接在 ChemDraw 中打开。
+将 Reaction SMILES 转换为可编辑的 **ChemDraw CDXML**，支持多步骤、多组分、反应条件标注、尺寸驱动布局及分页。
+
+项目已按官方 CDXML 定义重构，并加入真实论文案例与自动回归测试；论文测试案例已由用户在 ChemDraw 原生打开并提供截图确认；打印效果仍待验证。
 
 ## 功能
 
@@ -50,4 +52,61 @@ c1ccccc1>>c1ccc(cc1)[N+](=O)[O-]
 
 ## 输出
 
-生成标准的 `.cdxml` 文件，可以通过 ChemDraw 直接打开，支持编辑和导出为其他格式。
+生成供 ChemDraw 编辑的 `.cdxml` 文件。当前已验证 XML 格式和 RDKit 结构往返；论文案例的原生显示已通过用户截图确认，其他输入仍需结合下方已知限制评估。
+## 布局重构
+
+要求 Python 3.10+。安装：`pip install -r requirements.txt`。
+原 CLI 参数和 `ReactionStep` / `build_linear_reaction` 入口保留。
+内部实现位于 `cdxml_engine.py`，不再依赖 RDKit 可选的 ChemDraw 写出扩展。
+
+- 坐标单位统一为 point，键长 24 pt；只使用二维描绘，不进行三维力场优化。
+- 反应物在左、产物在右，箭头通过 `Tail3D` / `Head3D` 明确方向。
+- 分子标签留白、条件文字和步骤标题参与尺寸计算；支持换行和 XML 特殊字符。
+- 整步反应不拆分；超高分页，超宽扩展为整数 A4 横向纸张网格。
+  扩展画布可能需要多张纸打印，并不等于缩放到单张 A4。
+- 输出字体表、页面边界、唯一对象 ID 和 `scheme/step` 反应关联。
+- 保留常见电荷、同位素、自由基、楔线立体结构及双键几何。
+  目前仅支持 `reactants>>products`，不支持 agent 段、查询原子、通配符、增强立体组和配位键。
+  原子映射编号不会作为输出标签保留。
+- 文字尺寸采用保守字体无关估计；实际字体替换和复杂分子内部标签仍需 ChemDraw 人工复核。
+
+## 验证与示例
+
+```bash
+python -m unittest -v
+python gen_test_schemes.py --output-dir examples
+```
+
+测试覆盖对象边界、对象间相交、方向、唯一 ID、长条件、多组分、分页，
+以及 RDKit 重新读取后的 canonical isomeric SMILES 对比。
+设置 `CDXML_DTD` 为本地官方 DTD 路径可额外运行格式验证（需 `pip install lxml`）。
+官方 DTD 的 `AS` 枚举含 XML NMTOKEN 不允许的 `+` 和 `?`，测试仅将这一属性
+声明放宽为 CDATA 后加载，其余声明保持原样。CI 自动下载 DTD 执行检查。
+自动检查不替代对其他案例的 ChemDraw 原生打开和打印检查。
+
+设计参考：
+
+- [Revvity 官方 CDXML DTD](https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd)
+- [RDKit CDXML 文档](https://rdkit.org/docs/source/rdkit.Chem.rdmolfiles.html)
+- [pycdxml](https://github.com/kienerj/pycdxml)：借鉴其统一样式和布局思路，未复制代码。
+
+
+## 真实论文案例
+
+已用 Tang 等 2021 年论文 Figure 3A 的前两步“乳糖水解 → 葡萄糖氧化”测试，
+包含 9 个分子、78 个原子及 25 条立体楔线/虚楔线。对象边界、包围盒不相交、
+结构往返和元素守恒检查通过。
+
+```bash
+python paper_case_example.py -o tang2021_cascade.cdxml
+python -m unittest -v
+```
+
+[案例输入、来源与测试说明](paper_case/README.md)。该案例是手工转录的反应示例，
+不包含论文完整级联过程，程序本身不支持从论文 PDF 自动识别结构。
+
+### 已知限制
+
+- 该案例需要 1684 × 595 pt（两张横向 A4 宽度），目前通过扩展画布避免出界，紧凑排版仍待改进。
+- 用户提供的 ChemDraw 原生截图确认：该论文案例可打开，结构、文字和箭头无明显重叠；截图可见反应跨越纸张分页线，打印效果仍未验证。此前 COM 授权错误仅限制自动化接口测试。
+- RDKit 在案例读取中报告反应关联对象查找警告；分子结构往返通过不等于所有读取器的反应语义均兼容。

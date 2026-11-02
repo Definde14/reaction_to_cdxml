@@ -1,0 +1,16 @@
+name: CDXML regression
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt lxml
+      - run: curl -fL https://static.chemistry.revvitycloud.com/cdxml/CDXML.dtd -o /tmp/CDXML.dtd
+      - run: python -m unittest -v
+        env:
+          CDXML_DTD: /tmp/CDXML.dtd
+      - run: python gen_test_schemes.py

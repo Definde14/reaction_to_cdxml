@@ -1,0 +1,29 @@
+[
+  {
+    "reactants_smiles": [
+      "C([C@@H]1[C@@H]([C@@H]([C@H]([C@@H](O1)O[C@@H]2[C@H](OC([C@@H]([C@H]2O)O)O)CO)O)O)O)O",
+      "O"
+    ],
+    "products_smiles": [
+      "C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O",
+      "C([C@@H]1[C@@H]([C@@H]([C@H](C(O1)O)O)O)O)O"
+    ],
+    "label": "1. Lactose hydrolysis",
+    "conditions_above": "beta-Galactosidase (beta-Gal)",
+    "conditions_below": "MHOFs-confined cascade"
+  },
+  {
+    "reactants_smiles": [
+      "C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O",
+      "O=O",
+      "O"
+    ],
+    "products_smiles": [
+      "C([C@H]([C@H]([C@@H]([C@H](C(=O)O)O)O)O)O)O",
+      "OO"
+    ],
+    "label": "2. Glucose oxidation (net reaction)",
+    "conditions_above": "Glucose oxidase (GOx)",
+    "conditions_below": "Lactone hydrolysis included"
+  }
+]
